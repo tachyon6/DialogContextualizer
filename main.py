@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 from sklearn.metrics.pairwise import cosine_similarity
+import re
 
 try:
     tokenizer = AutoTokenizer.from_pretrained('bespin-global/klue-sroberta-base-continue-learning-by-mnr')
@@ -39,6 +40,11 @@ except Exception as e:
     print("사전 정의된 상황 임베딩 생성 중 오류 발생:", e)
     exit()
 
+def clean_text(text):
+    text = re.sub(r'\s+', ' ', text)  # remove extra spaces
+    text = re.sub(r'\W+', ' ', text)  # remove non-word characters
+    return text
+
 def generate_embedding(text):
     try:
         inputs = tokenizer(text, return_tensors='pt', padding=True, truncation=True, max_length=512)
@@ -48,22 +54,20 @@ def generate_embedding(text):
         print("임베딩 생성 중 오류 발생:", e)
         return None
 
-def generate_max_embedding(texts):
-    embeddings = []
-    for text in texts:
-        embedding = generate_embedding(text)
-        if embedding is not None:
-            embeddings.append(embedding)
-    if not embeddings:
-        return None
-    return np.max(embeddings, axis=0)
-
 def find_most_similar_situation(texts):
     try:
-        input_embedding = generate_max_embedding(texts)
-        if input_embedding is None:
+        input_embeddings = []
+        for text in texts:
+            embedding = generate_embedding(text)
+            if embedding is not None:
+                input_embeddings.append(embedding)
+        
+        if not input_embeddings:
             return "임베딩 생성 실패"
+
+        input_embedding = np.mean(input_embeddings, axis=0)
         similarities = cosine_similarity(input_embedding.reshape(1, -1), predefined_embeddings)
+        print(f"유사도 점수: {similarities}")  # 디버깅을 위한 출력
         most_similar_index = np.argmax(similarities)
         return predefined_situations[most_similar_index]
     except Exception as e:
@@ -84,7 +88,9 @@ def main():
             print("입력된 문장이 없습니다.")
             return
         
-        most_similar_situation = find_most_similar_situation(lines)
+        cleaned_lines = [clean_text(line) for line in lines]
+        print(f"입력된 문장: {cleaned_lines}")  # 디버깅을 위한 출력
+        most_similar_situation = find_most_similar_situation(cleaned_lines)
         print("가장 유사한 상황: ", most_similar_situation)
     except Exception as e:
         print("입력 처리 중 오류 발생:", e)
